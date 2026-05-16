@@ -423,6 +423,13 @@ class CfTelegramGroupRewardService
             return ['ok' => true, 'handled' => false];
         }
 
+        if (self::isChannelGuardEnabled($moduleSettings)) {
+            $guardHandled = self::handleChannelGuardUpdate($moduleSettings, $botToken, $update);
+            if ($guardHandled) {
+                return ['ok' => true, 'handled' => true, 'reason' => 'channel_guard'];
+            }
+        }
+
         $message = is_array($update['message'] ?? null) ? $update['message'] : [];
         $text = trim((string) ($message['text'] ?? ''));
         $from = is_array($message['from'] ?? null) ? $message['from'] : [];
@@ -523,6 +530,117 @@ class CfTelegramGroupRewardService
             'userid' => (int) ($binding['userid'] ?? 0),
             'telegram_user_id' => $telegramUserId,
         ];
+    }
+
+    private static function isChannelGuardEnabled(array $moduleSettings): bool
+    {
+        $raw = strtolower(trim((string) ($moduleSettings['telegram_channel_guard_enabled'] ?? '0')));
+        return in_array($raw, ['1', 'on', 'yes', 'true', 'enabled'], true);
+    }
+
+    private static function handleChannelGuardUpdate(array $moduleSettings, string $botToken, array $update): bool
+    {
+        $groupChatId = trim((string) ($moduleSettings['telegram_channel_guard_group_chat_id'] ?? ''));
+        $channelChatId = trim((string) ($moduleSettings['telegram_channel_guard_channel_chat_id'] ?? ''));
+        if (!self::validateChatId($groupChatId) || !self::validateChatId($channelChatId)) {
+            return false;
+        }
+
+        $callback = is_array($update['callback_query'] ?? null) ? $update['callback_query'] : [];
+        if (!empty($callback)) {
+            return self::handleChannelGuardCallback($botToken, $groupChatId, $channelChatId, $callback);
+        }
+
+        $message = is_array($update['message'] ?? null) ? $update['message'] : [];
+        $chat = is_array($message['chat'] ?? null) ? $message['chat'] : [];
+        $chatId = trim((string) ($chat['id'] ?? ''));
+        if ($chatId !== $groupChatId) {
+            return false;
+        }
+        $newMembers = is_array($message['new_chat_members'] ?? null) ? $message['new_chat_members'] : [];
+        if (empty($newMembers)) {
+            return false;
+        }
+        foreach ($newMembers as $member) {
+            if (!is_array($member)) {
+                continue;
+            }
+            $userId = (int) ($member['id'] ?? 0);
+            if ($userId <= 0 || !empty($member['is_bot'])) {
+                continue;
+            }
+            self::restrictGroupMember($botToken, $groupChatId, $userId, true);
+            $verifyText = "🔒 入群验证：请先关注指定频道后点击下方“我已关注，申请解除禁言”。";
+            self::sendChannelGuardVerifyMessage($botToken, $groupChatId, $channelChatId, $userId, $verifyText);
+        }
+        return true;
+    }
+
+    private static function handleChannelGuardCallback(string $botToken, string $groupChatId, string $channelChatId, array $callback): bool
+    {
+        $data = trim((string) ($callback['data'] ?? ''));
+        if (strpos($data, 'cf_guard_verify:') !== 0) {
+            return false;
+        }
+        $from = is_array($callback['from'] ?? null) ? $callback['from'] : [];
+        $fromId = (int) ($from['id'] ?? 0);
+        $targetUserId = (int) substr($data, strlen('cf_guard_verify:'));
+        $callbackId = trim((string) ($callback['id'] ?? ''));
+        if ($fromId <= 0 || $targetUserId <= 0 || $callbackId === '') {
+            return true;
+        }
+        if ($fromId !== $targetUserId) {
+            self::telegramApiRequest($botToken, 'answerCallbackQuery', [
+                'callback_query_id' => $callbackId,
+                'text' => '请点击属于你自己的验证按钮。',
+                'show_alert' => '1',
+            ]);
+            return true;
+        }
+        $membership = self::verifyMembership($botToken, $channelChatId, $fromId, 120);
+        $isMember = !empty($membership['is_member']);
+        if ($isMember) {
+            self::restrictGroupMember($botToken, $groupChatId, $fromId, false);
+            self::telegramApiRequest($botToken, 'answerCallbackQuery', [
+                'callback_query_id' => $callbackId,
+                'text' => '验证通过，已解除禁言。',
+            ]);
+        } else {
+            self::restrictGroupMember($botToken, $groupChatId, $fromId, true);
+            self::telegramApiRequest($botToken, 'answerCallbackQuery', [
+                'callback_query_id' => $callbackId,
+                'text' => '尚未检测到你关注频道，请先关注后重试。',
+                'show_alert' => '1',
+            ]);
+        }
+        return true;
+    }
+
+    private static function sendChannelGuardVerifyMessage(string $botToken, string $groupChatId, string $channelChatId, int $userId, string $text): void
+    {
+        $payload = [
+            'chat_id' => $groupChatId,
+            'text' => $text,
+            'reply_markup' => json_encode([
+                'inline_keyboard' => [[
+                    ['text' => '📢 打开频道', 'url' => 'https://t.me/c/' . ltrim($channelChatId, '-')],
+                    ['text' => '✅ 我已关注，申请解除禁言', 'callback_data' => 'cf_guard_verify:' . $userId],
+                ]],
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        ];
+        self::telegramApiRequest($botToken, 'sendMessage', $payload);
+    }
+
+    private static function restrictGroupMember(string $botToken, string $groupChatId, int $userId, bool $mute): void
+    {
+        $permissions = $mute
+            ? ['can_send_messages' => false]
+            : ['can_send_messages' => true, 'can_send_polls' => true, 'can_send_other_messages' => true, 'can_add_web_page_previews' => true, 'can_invite_users' => true];
+        self::telegramApiRequest($botToken, 'restrictChatMember', [
+            'chat_id' => $groupChatId,
+            'user_id' => $userId,
+            'permissions' => json_encode($permissions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        ]);
     }
 
     private static function handleGroupKeywordAutoReply(array $moduleSettings, string $botToken, array $message, string $rawText): void

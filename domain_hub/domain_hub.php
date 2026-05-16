@@ -3553,6 +3553,24 @@ function domain_hub_config() {
             "Cols" => "60",
             "Description" => "支持两种格式：\n1) JSON 数组：[{\"id\":\"delegated\",\"keywords\":[\"已委派\",\"委派\"],\"match_mode\":\"contains\",\"reply\":\"...\"}]\n2) 简易每行：关键词,回复内容（也支持中文逗号）。例如：已委派,已委派：表示该域名当前使用的是非 DNSHE 的 DNS 服务器（NS）。",
         ],
+        "telegram_channel_guard_enabled" => [
+            "FriendlyName" => "启用 Telegram 新人频道关注验证",
+            "Type" => "yesno",
+            "Default" => "no",
+            "Description" => "开启后，新群员将先被禁言，关注指定频道并点击验证按钮后自动解除禁言。",
+        ],
+        "telegram_channel_guard_group_chat_id" => [
+            "FriendlyName" => "频道验证目标群 Chat ID",
+            "Type" => "text",
+            "Size" => "30",
+            "Description" => "例如：-1001234567890。仅对该群的新成员执行禁言与关注验证。",
+        ],
+        "telegram_channel_guard_channel_chat_id" => [
+            "FriendlyName" => "频道验证目标频道 Chat ID",
+            "Type" => "text",
+            "Size" => "30",
+            "Description" => "例如：-1009876543210。用于校验用户是否已关注该频道。",
+        ],
         "enable_ssl_request" => [
             "FriendlyName" => "启用 SSL 申请",
             "Type" => "yesno",
