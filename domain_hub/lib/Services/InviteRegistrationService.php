@@ -1044,6 +1044,135 @@ class CfInviteRegistrationService
         return $created;
     }
 
+    public static function canUserUseCustomInviteCode(int $userId): bool
+    {
+        if ($userId <= 0) {
+            return false;
+        }
+        $raw = (string) self::resolveModuleSettingValue('invite_registration_custom_code_user_whitelist');
+        if (trim($raw) === '') {
+            return false;
+        }
+        $tokens = preg_split('/[\s,;|]+/', $raw) ?: [];
+        foreach ($tokens as $token) {
+            $id = (int) trim((string) $token);
+            if ($id > 0 && $id === $userId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static function generateCustomInviteCode(int $userId, string $customCode): array
+    {
+        self::ensureTables();
+        if ($userId <= 0) {
+            throw new \InvalidArgumentException('invalid_user');
+        }
+        if (!self::canUserUseCustomInviteCode($userId)) {
+            throw new \InvalidArgumentException('custom_not_allowed');
+        }
+        if (self::isFixedInviteModeLocked($userId)) {
+            throw new \InvalidArgumentException('fixed_mode_locked');
+        }
+        if (!self::inviterCanShare($userId) || !self::inviterMeetsMinimumMonths($userId)) {
+            throw new \InvalidArgumentException('inviter_not_eligible');
+        }
+
+        $code = trim($customCode);
+        if (!preg_match('/^[A-Za-z0-9]{6,20}$/', $code)) {
+            throw new \InvalidArgumentException('custom_invalid_format');
+        }
+
+        $remaining = self::getInviterRemainingQuota($userId);
+        if ($remaining !== PHP_INT_MAX && $remaining <= 0) {
+            throw new \InvalidArgumentException('count_exceeds_remaining');
+        }
+        if (self::isInviteCodeOccupied($code, $userId)) {
+            throw new \InvalidArgumentException('custom_code_exists');
+        }
+
+        $now = date('Y-m-d H:i:s');
+        try {
+            Capsule::table(self::TABLE_CODE_POOL)->insert([
+                'owner_userid' => $userId,
+                'invite_code' => $code,
+                'status' => 'unused',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        } catch (\Throwable $e) {
+            throw new \InvalidArgumentException('custom_code_exists');
+        }
+
+        return ['invite_code' => $code];
+    }
+
+    public static function enableFixedInviteModeWithCustomCode(int $userId, string $customCode): array
+    {
+        self::ensureTables();
+        if ($userId <= 0) {
+            throw new \InvalidArgumentException('invalid_user');
+        }
+        if (!self::canUserUseCustomInviteCode($userId)) {
+            throw new \InvalidArgumentException('custom_not_allowed');
+        }
+        if (!self::inviterCanShare($userId) || !self::inviterMeetsMinimumMonths($userId)) {
+            throw new \InvalidArgumentException('inviter_not_eligible');
+        }
+        $code = trim($customCode);
+        if (!preg_match('/^[A-Za-z0-9]{6,20}$/', $code)) {
+            throw new \InvalidArgumentException('custom_invalid_format');
+        }
+        $remaining = self::getInviterRemainingQuota($userId);
+        if ($remaining !== PHP_INT_MAX && $remaining <= 0) {
+            throw new \InvalidArgumentException('count_exceeds_remaining');
+        }
+        if (self::isInviteCodeOccupied($code, $userId)) {
+            throw new \InvalidArgumentException('custom_code_exists');
+        }
+        $now = date('Y-m-d H:i:s');
+        try {
+            self::ensureProfile($userId);
+            Capsule::table(self::TABLE_UNLOCK)
+                ->where('userid', $userId)
+                ->update([
+                    'invite_code' => $code,
+                    'invite_mode_lock' => 'fixed',
+                    'updated_at' => $now,
+                ]);
+        } catch (\InvalidArgumentException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            throw new \InvalidArgumentException('custom_code_exists');
+        }
+        return ['invite_code' => $code];
+    }
+
+    private static function isInviteCodeOccupied(string $code, int $userId = 0): bool
+    {
+        $cleanCode = trim($code);
+        if ($cleanCode === '') {
+            return true;
+        }
+        $inPool = Capsule::table(self::TABLE_CODE_POOL)->where('invite_code', $cleanCode)->exists();
+        if ($inPool) {
+            return true;
+        }
+        $unlockRow = Capsule::table(self::TABLE_UNLOCK)
+            ->where('invite_code', $cleanCode)
+            ->first(['userid', 'invite_mode_lock']);
+        if (!$unlockRow) {
+            return false;
+        }
+        $ownerId = (int) ($unlockRow->userid ?? 0);
+        $modeLock = strtolower(trim((string) ($unlockRow->invite_mode_lock ?? '')));
+        if ($ownerId > 0 && $ownerId === $userId && $modeLock !== 'fixed') {
+            return false;
+        }
+        return true;
+    }
+
     public static function fetchUnusedCodes(int $userId, int $page, int $perPage = 5): array
     {
         self::ensureTables();
@@ -1070,7 +1199,7 @@ class CfInviteRegistrationService
         foreach ($rows as $row) {
             $items[] = [
                 'id' => (int) ($row->id ?? 0),
-                'invite_code' => strtoupper((string) ($row->invite_code ?? '')),
+                'invite_code' => trim((string) ($row->invite_code ?? '')),
                 'created_at' => $row->created_at ?? null,
                 'mode' => 'one_time',
             ];
@@ -1102,7 +1231,7 @@ class CfInviteRegistrationService
                 'updated_at' => date('Y-m-d H:i:s'),
             ]);
         return [
-            'invite_code' => strtoupper((string) ($profile['invite_code'] ?? '')),
+            'invite_code' => trim((string) ($profile['invite_code'] ?? '')),
         ];
     }
 
@@ -1121,7 +1250,7 @@ class CfInviteRegistrationService
             return '';
         }
         $code = (string) Capsule::table(self::TABLE_UNLOCK)->where('userid', $userId)->value('invite_code');
-        return strtoupper(trim($code));
+        return trim($code);
     }
 
 
@@ -1134,7 +1263,7 @@ class CfInviteRegistrationService
             ->where('userid', $userId)
             ->first(['invite_code', 'created_at']);
         return [
-            'invite_code' => strtoupper(trim((string) ($row->invite_code ?? ''))),
+            'invite_code' => trim((string) ($row->invite_code ?? '')),
             'created_at' => $row->created_at ?? null,
         ];
     }
@@ -2580,7 +2709,7 @@ class CfInviteRegistrationService
         return [
             'id' => (int) ($row->id ?? 0),
             'userid' => (int) ($row->userid ?? 0),
-            'invite_code' => strtoupper((string) ($row->invite_code ?? '')),
+            'invite_code' => trim((string) ($row->invite_code ?? '')),
             'code_generate_count' => (int) ($row->code_generate_count ?? 0),
             'unlocked_at' => $row->unlocked_at ?? null,
             'created_at' => $row->created_at ?? null,

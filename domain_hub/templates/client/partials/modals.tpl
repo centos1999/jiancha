@@ -836,6 +836,7 @@ $inviteRegCodeLinkPrefix = $inviteRegCodeBaseQuery !== '' ? ('?' . $inviteRegCod
 $inviteRegRemainingQuotaRaw = $inviteRegistrationRemainingQuota ?? $inviteRegMaxPerUser;
 $inviteRegRemainingQuota = (is_int($inviteRegRemainingQuotaRaw) || ctype_digit((string) $inviteRegRemainingQuotaRaw)) ? (int) $inviteRegRemainingQuotaRaw : 0;
 $inviteRegBatchMax = max(1, (int) ($inviteRegistrationBatchMax ?? 50));
+$inviteRegCanCustomCode = !empty($inviteRegistrationCanCustomCode);
 $inviteRegInputMax = $inviteRegRemainingQuota >= 999999999 ? $inviteRegBatchMax : min(max(0, $inviteRegRemainingQuota), $inviteRegBatchMax);
 $inviteRegGenerateDisabled = $inviteRegGenerationLockedByGateDisabled || $inviteRegCopyDisabled || ($inviteRegRemainingQuota !== PHP_INT_MAX && $inviteRegRemainingQuota <= 0);
 $inviteRegBidirectionalRewardEnabled = !empty($module_settings)
@@ -910,6 +911,11 @@ $inviteRegCanAutoUnlock = !$inviteRegUnlocked && $inviteRegistrationInviteEnable
                                 <i class="fas fa-plus-circle me-1"></i><?php echo $modalText('cfclient.invite_registration.generate_codes', $modalIsChinese ? '生成邀请码' : 'Generate Invite Codes'); ?>
                             </button>
                         </div>
+                        <?php if ($inviteRegCanCustomCode): ?>
+                        <div class="col-12">
+                            <input type="text" class="form-control" id="invite_custom_code_input" name="invite_custom_code" placeholder="<?php echo $modalText('cfclient.invite_registration.custom_placeholder', $modalIsChinese ? '白名单用户可选填自定义邀请码（6-20位字母数字，支持小写）；留空则随机生成' : 'Whitelist users may optionally enter a custom code (6-20 letters/digits, lowercase allowed); leave blank for random generation'); ?>" maxlength="20" autocomplete="off">
+                        </div>
+                        <?php endif; ?>
                     </form>
                     <small class="text-muted d-block mb-2">
                         <?php echo $modalText('cfclient.invite_registration.remaining_quota', $modalIsChinese ? '剩余额度' : 'Remaining Quota'); ?>:
@@ -1112,6 +1118,7 @@ $inviteRegCanAutoUnlock = !$inviteRegUnlocked && $inviteRegistrationInviteEnable
 (function () {
     var input = document.getElementById('invite_generate_count');
     var modeSelect = document.getElementById('invite_mode_select');
+    var customInput = document.getElementById('invite_custom_code_input');
     if (!input) return;
     var max = parseInt(input.getAttribute('max') || '0', 10);
     var exceedMessage = <?php echo json_encode($modalText('cfclient.invite_registration.exceed_alert', $modalIsChinese ? '生成数量不能超过剩余额度：%s' : 'Generation quantity cannot exceed remaining quota: %s', ['{max}'])); ?>;
@@ -1123,6 +1130,7 @@ $inviteRegCanAutoUnlock = !$inviteRegUnlocked && $inviteRegistrationInviteEnable
             input.value = 1;
             input.setAttribute('readonly', 'readonly');
             input.setAttribute('disabled', 'disabled');
+            if (customInput) { customInput.removeAttribute('disabled'); customInput.removeAttribute('required'); }
         } else {
             input.removeAttribute('readonly');
             <?php if ($inviteRegGenerateDisabled): ?>
@@ -1130,6 +1138,7 @@ $inviteRegCanAutoUnlock = !$inviteRegUnlocked && $inviteRegistrationInviteEnable
             <?php else: ?>
             input.removeAttribute('disabled');
             <?php endif; ?>
+            if (customInput) { customInput.removeAttribute('disabled'); customInput.removeAttribute('required'); }
         }
     }
 

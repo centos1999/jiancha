@@ -3313,6 +3313,14 @@ function domain_hub_config() {
             "Default" => "",
             "Description" => "格式：用户ID:可邀请总数，逗号或换行分隔。示例 1001:50,1002:999。命中用户将优先使用该额度，不受邀请码档位规则与“每用户最多邀请数”限制。",
         ],
+        "invite_registration_custom_code_user_whitelist" => [
+            "FriendlyName" => "自定义邀请码白名单用户",
+            "Type" => "textarea",
+            "Rows" => "3",
+            "Cols" => "50",
+            "Default" => "",
+            "Description" => "仅白名单用户可在前端生成自定义邀请码。格式：用户ID，支持逗号/空格/换行分隔，例如：1001,1002",
+        ],
         "invite_registration_max_per_user" => [
             "FriendlyName" => "每用户最多邀请数",
             "Type" => "text",

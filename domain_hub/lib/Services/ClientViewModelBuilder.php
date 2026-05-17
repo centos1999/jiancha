@@ -313,6 +313,9 @@ class CfClientViewModelBuilder
         $globals['inviteRegistrationBatchMax'] = class_exists('CfInviteRegistrationService')
             ? CfInviteRegistrationService::getGenerateBatchMax()
             : 50;
+        $globals['inviteRegistrationCanCustomCode'] = class_exists('CfInviteRegistrationService')
+            ? CfInviteRegistrationService::canUserUseCustomInviteCode($userId)
+            : false;
 
         $globals['inviteRegistrationGithubAuthUrl'] = '';
         $globals['inviteRegistrationGithubConfigured'] = false;
