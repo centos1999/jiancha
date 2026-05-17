@@ -5,7 +5,7 @@ declare(strict_types=1);
 use WHMCS\Database\Capsule;
 
 if (!defined('WHMCS')) {
-    require_once __DIR__ . '/../../../../init.php';
+    require_once __DIR__ . '/../../../init.php';
 }
 
 require_once __DIR__ . '/domain_hub.php';
