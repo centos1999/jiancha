@@ -1130,7 +1130,7 @@ $inviteRegCanAutoUnlock = !$inviteRegUnlocked && $inviteRegistrationInviteEnable
             input.value = 1;
             input.setAttribute('readonly', 'readonly');
             input.setAttribute('disabled', 'disabled');
-            if (customInput) { customInput.setAttribute('disabled', 'disabled'); customInput.removeAttribute('required'); }
+            if (customInput) { customInput.removeAttribute('disabled'); customInput.removeAttribute('required'); }
         } else {
             input.removeAttribute('readonly');
             <?php if ($inviteRegGenerateDisabled): ?>

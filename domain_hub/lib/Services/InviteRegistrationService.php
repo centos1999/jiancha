@@ -1088,6 +1088,9 @@ class CfInviteRegistrationService
         if ($remaining !== PHP_INT_MAX && $remaining <= 0) {
             throw new \InvalidArgumentException('count_exceeds_remaining');
         }
+        if (self::isInviteCodeOccupied($code, $userId)) {
+            throw new \InvalidArgumentException('custom_code_exists');
+        }
 
         $now = date('Y-m-d H:i:s');
         try {
@@ -1125,16 +1128,11 @@ class CfInviteRegistrationService
         if ($remaining !== PHP_INT_MAX && $remaining <= 0) {
             throw new \InvalidArgumentException('count_exceeds_remaining');
         }
-        $exists = Capsule::table(self::TABLE_CODE_POOL)->where('invite_code', $code)->exists();
-        if ($exists) {
+        if (self::isInviteCodeOccupied($code, $userId)) {
             throw new \InvalidArgumentException('custom_code_exists');
         }
         $now = date('Y-m-d H:i:s');
         try {
-            $currentOwner = (int) Capsule::table(self::TABLE_UNLOCK)->where('invite_code', $code)->value('userid');
-            if ($currentOwner > 0 && $currentOwner !== $userId) {
-                throw new \InvalidArgumentException('custom_code_exists');
-            }
             self::ensureProfile($userId);
             Capsule::table(self::TABLE_UNLOCK)
                 ->where('userid', $userId)
@@ -1149,6 +1147,30 @@ class CfInviteRegistrationService
             throw new \InvalidArgumentException('custom_code_exists');
         }
         return ['invite_code' => $code];
+    }
+
+    private static function isInviteCodeOccupied(string $code, int $userId = 0): bool
+    {
+        $cleanCode = strtoupper(trim($code));
+        if ($cleanCode === '') {
+            return true;
+        }
+        $inPool = Capsule::table(self::TABLE_CODE_POOL)->where('invite_code', $cleanCode)->exists();
+        if ($inPool) {
+            return true;
+        }
+        $unlockRow = Capsule::table(self::TABLE_UNLOCK)
+            ->where('invite_code', $cleanCode)
+            ->first(['userid', 'invite_mode_lock']);
+        if (!$unlockRow) {
+            return false;
+        }
+        $ownerId = (int) ($unlockRow->userid ?? 0);
+        $modeLock = strtolower(trim((string) ($unlockRow->invite_mode_lock ?? '')));
+        if ($ownerId > 0 && $ownerId === $userId && $modeLock !== 'fixed') {
+            return false;
+        }
+        return true;
     }
 
     public static function fetchUnusedCodes(int $userId, int $page, int $perPage = 5): array
