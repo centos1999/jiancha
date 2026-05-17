@@ -424,6 +424,7 @@ class CfTelegramGroupRewardService
         }
 
         $message = is_array($update['message'] ?? null) ? $update['message'] : [];
+        self::handleGroupJoinWelcome($moduleSettings, $botToken, $message);
         $text = trim((string) ($message['text'] ?? ''));
         $from = is_array($message['from'] ?? null) ? $message['from'] : [];
         if ($text === '' || empty($from)) {
@@ -561,6 +562,54 @@ class CfTelegramGroupRewardService
         self::sendBotChatMessage($botToken, $chatId, (string) $matched['reply']);
     }
 
+    private static function handleGroupJoinWelcome(array $moduleSettings, string $botToken, array $message): void
+    {
+        if (!self::isGroupWelcomeEnabled($moduleSettings)) {
+            return;
+        }
+        $chat = is_array($message['chat'] ?? null) ? $message['chat'] : [];
+        $chatType = strtolower(trim((string) ($chat['type'] ?? '')));
+        if (!in_array($chatType, ['group', 'supergroup'], true)) {
+            return;
+        }
+        $chatId = trim((string) ($chat['id'] ?? ''));
+        if ($chatId === '' || !preg_match('/^-?[0-9]{5,20}$/', $chatId)) {
+            return;
+        }
+        $allowedChatIds = self::parseGroupWelcomeAllowedChatIds($moduleSettings);
+        if (!empty($allowedChatIds) && !in_array($chatId, $allowedChatIds, true)) {
+            return;
+        }
+
+        $newMembers = is_array($message['new_chat_members'] ?? null) ? $message['new_chat_members'] : [];
+        if (empty($newMembers)) {
+            return;
+        }
+
+        $cooldownSeconds = max(10, min(300, intval($moduleSettings['telegram_group_welcome_cooldown_seconds'] ?? 30)));
+        if (self::isGroupWelcomeInCooldown($chatId, $cooldownSeconds)) {
+            return;
+        }
+
+        $template = trim((string) ($moduleSettings['telegram_group_welcome_template'] ?? ''));
+        if ($template === '') {
+            $template = '欢迎 {username} 加入本群！绑定Bot请在客户中心网页点击对应链接进行绑定。';
+        }
+
+        foreach ($newMembers as $member) {
+            if (!is_array($member)) {
+                continue;
+            }
+            if (!empty($member['is_bot'])) {
+                continue;
+            }
+            $username = self::formatTelegramMemberDisplayName($member);
+            $messageText = str_replace('{username}', $username, $template);
+            self::sendBotChatMessage($botToken, $chatId, $messageText);
+            break;
+        }
+    }
+
     private static function isKeywordAutoReplyEnabled(array $moduleSettings): bool
     {
         $raw = strtolower(trim((string) ($moduleSettings['telegram_group_keyword_reply_enabled'] ?? '0')));
@@ -582,6 +631,42 @@ class CfTelegramGroupRewardService
             }
         }
         return array_keys($ids);
+    }
+
+    private static function isGroupWelcomeEnabled(array $moduleSettings): bool
+    {
+        $raw = strtolower(trim((string) ($moduleSettings['telegram_group_welcome_enabled'] ?? '0')));
+        return in_array($raw, ['1', 'on', 'yes', 'true', 'enabled'], true);
+    }
+
+    private static function parseGroupWelcomeAllowedChatIds(array $moduleSettings): array
+    {
+        $raw = (string) ($moduleSettings['telegram_group_welcome_chat_ids'] ?? '');
+        if (trim($raw) === '') {
+            return [];
+        }
+        $parts = preg_split('/[\s,]+/', $raw) ?: [];
+        $ids = [];
+        foreach ($parts as $part) {
+            $id = trim((string) $part);
+            if ($id !== '' && preg_match('/^-?[0-9]{5,20}$/', $id)) {
+                $ids[$id] = true;
+            }
+        }
+        return array_keys($ids);
+    }
+
+    private static function formatTelegramMemberDisplayName(array $member): string
+    {
+        $username = trim((string) ($member['username'] ?? ''));
+        if ($username !== '') {
+            return '@' . ltrim($username, '@');
+        }
+        $name = trim(((string) ($member['first_name'] ?? '')) . ' ' . ((string) ($member['last_name'] ?? '')));
+        if ($name !== '') {
+            return $name;
+        }
+        return 'ID:' . intval($member['id'] ?? 0);
     }
 
     private static function parseKeywordReplyRules(array $moduleSettings): array
@@ -742,6 +827,32 @@ class CfTelegramGroupRewardService
                 'lock_key' => $lockKey,
                 'locked_until' => $lockedUntil,
                 'meta_json' => json_encode(['type' => 'telegram_keyword_reply'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'updated_at' => date('Y-m-d H:i:s', $now),
+            ];
+            Capsule::table('mod_cloudflare_job_locks')->updateOrInsert(['lock_key' => $lockKey], $payload);
+            return false;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    private static function isGroupWelcomeInCooldown(string $chatId, int $cooldownSeconds): bool
+    {
+        try {
+            $now = time();
+            $lockKey = 'tg_welcome:' . $chatId;
+            $row = Capsule::table('mod_cloudflare_job_locks')->where('lock_key', $lockKey)->first();
+            if ($row && !empty($row->locked_until)) {
+                $lockedUntilTs = strtotime((string) $row->locked_until);
+                if ($lockedUntilTs !== false && $lockedUntilTs > $now) {
+                    return true;
+                }
+            }
+            $lockedUntil = date('Y-m-d H:i:s', $now + max(1, $cooldownSeconds));
+            $payload = [
+                'lock_key' => $lockKey,
+                'locked_until' => $lockedUntil,
+                'meta_json' => json_encode(['type' => 'telegram_group_welcome'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 'updated_at' => date('Y-m-d H:i:s', $now),
             ];
             Capsule::table('mod_cloudflare_job_locks')->updateOrInsert(['lock_key' => $lockKey], $payload);
