@@ -3510,7 +3510,7 @@ function domain_hub_config() {
             "FriendlyName" => "Telegram Bot Token",
             "Type" => "password",
             "Size" => "120",
-            "Description" => "用于调用 Telegram Bot API 校验群组成员并支持 Bot 对话绑定。请在 BotFather 将 Webhook 指向：https://你的WHMCS域名/index.php?m=domain_hub&telegram_bind_webhook=1（系统会自动加密存储）",
+            "Description" => "用于调用 Telegram Bot API 校验群组成员并支持 Bot 对话绑定。请在 BotFather 将 Webhook 指向：https://你的WHMCS域名/modules/addons/domain_hub/telegram_webhook.php（系统会自动加密存储）",
         ],
         "telegram_group_reward_amount" => [
             "FriendlyName" => "Telegram 社群奖励额度",

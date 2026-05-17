@@ -517,7 +517,7 @@ class CfClientController
                     'feature_enabled' => CfTelegramGroupRewardService::isEnabled($settings),
                     'bot_username' => CfTelegramGroupRewardService::resolveBotUsername($settings),
                     'bot_token_valid' => preg_match('/^[0-9]{5,20}:[A-Za-z0-9_-]{20,120}$/', $token) === 1,
-                    'webhook_expected' => $expectedWebhookUrl !== '' ? $expectedWebhookUrl : 'https://你的WHMCS域名/index.php?m=domain_hub&telegram_bind_webhook=1',
+                    'webhook_expected' => $expectedWebhookUrl !== '' ? $expectedWebhookUrl : 'https://你的WHMCS域名/modules/addons/domain_hub/telegram_webhook.php',
                     'webhook_url_empty' => $currentWebhookUrl === '',
                     'webhook_url_matches_expected' => $expectedWebhookUrl !== '' && $currentWebhookUrl === $expectedWebhookUrl,
                     'webhook_info' => $webhookInfo,

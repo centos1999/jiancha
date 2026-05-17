@@ -1237,7 +1237,7 @@ class CfTelegramGroupRewardService
         if ($baseUrl === '') {
             return '';
         }
-        return rtrim($baseUrl, '/') . '/index.php?m=domain_hub&telegram_bind_webhook=1';
+        return rtrim($baseUrl, '/') . '/modules/addons/domain_hub/telegram_webhook.php';
     }
 
     public static function setWebhookToExpected(array $moduleSettings): array
