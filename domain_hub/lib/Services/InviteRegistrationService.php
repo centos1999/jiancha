@@ -2709,7 +2709,7 @@ class CfInviteRegistrationService
         return [
             'id' => (int) ($row->id ?? 0),
             'userid' => (int) ($row->userid ?? 0),
-            'invite_code' => strtoupper((string) ($row->invite_code ?? '')),
+            'invite_code' => trim((string) ($row->invite_code ?? '')),
             'code_generate_count' => (int) ($row->code_generate_count ?? 0),
             'unlocked_at' => $row->unlocked_at ?? null,
             'created_at' => $row->created_at ?? null,
