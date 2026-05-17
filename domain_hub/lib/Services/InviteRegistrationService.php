@@ -1105,6 +1105,52 @@ class CfInviteRegistrationService
         return ['invite_code' => $code];
     }
 
+    public static function enableFixedInviteModeWithCustomCode(int $userId, string $customCode): array
+    {
+        self::ensureTables();
+        if ($userId <= 0) {
+            throw new \InvalidArgumentException('invalid_user');
+        }
+        if (!self::canUserUseCustomInviteCode($userId)) {
+            throw new \InvalidArgumentException('custom_not_allowed');
+        }
+        if (!self::inviterCanShare($userId) || !self::inviterMeetsMinimumMonths($userId)) {
+            throw new \InvalidArgumentException('inviter_not_eligible');
+        }
+        $code = strtoupper(trim($customCode));
+        if (!preg_match('/^[A-Z0-9]{6,20}$/', $code)) {
+            throw new \InvalidArgumentException('custom_invalid_format');
+        }
+        $remaining = self::getInviterRemainingQuota($userId);
+        if ($remaining !== PHP_INT_MAX && $remaining <= 0) {
+            throw new \InvalidArgumentException('count_exceeds_remaining');
+        }
+        $exists = Capsule::table(self::TABLE_CODE_POOL)->where('invite_code', $code)->exists();
+        if ($exists) {
+            throw new \InvalidArgumentException('custom_code_exists');
+        }
+        $now = date('Y-m-d H:i:s');
+        try {
+            $currentOwner = (int) Capsule::table(self::TABLE_UNLOCK)->where('invite_code', $code)->value('userid');
+            if ($currentOwner > 0 && $currentOwner !== $userId) {
+                throw new \InvalidArgumentException('custom_code_exists');
+            }
+            self::ensureProfile($userId);
+            Capsule::table(self::TABLE_UNLOCK)
+                ->where('userid', $userId)
+                ->update([
+                    'invite_code' => $code,
+                    'invite_mode_lock' => 'fixed',
+                    'updated_at' => $now,
+                ]);
+        } catch (\InvalidArgumentException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            throw new \InvalidArgumentException('custom_code_exists');
+        }
+        return ['invite_code' => $code];
+    }
+
     public static function fetchUnusedCodes(int $userId, int $page, int $perPage = 5): array
     {
         self::ensureTables();

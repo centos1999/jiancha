@@ -904,9 +904,6 @@ $inviteRegCanAutoUnlock = !$inviteRegUnlocked && $inviteRegistrationInviteEnable
                             <select class="form-select" id="invite_mode_select" name="invite_mode" <?php echo $inviteRegGenerateDisabled ? 'disabled' : ''; ?>>
                                 <option value="one_time"><?php echo $modalText('cfclient.invite_registration.mode.one_time', $modalIsChinese ? '一次性邀请码' : 'One-time Code'); ?></option>
                                 <option value="fixed"><?php echo $modalText('cfclient.invite_registration.mode.fixed', $modalIsChinese ? '固定邀请码' : 'Fixed Code'); ?></option>
-                                <?php if ($inviteRegCanCustomCode): ?>
-                                    <option value="custom"><?php echo $modalText('cfclient.invite_registration.mode.custom', $modalIsChinese ? '自定义邀请码' : 'Custom Code'); ?></option>
-                                <?php endif; ?>
                             </select>
                         </div>
                         <div class="col-sm-4">
@@ -916,7 +913,7 @@ $inviteRegCanAutoUnlock = !$inviteRegUnlocked && $inviteRegistrationInviteEnable
                         </div>
                         <?php if ($inviteRegCanCustomCode): ?>
                         <div class="col-12">
-                            <input type="text" class="form-control text-uppercase" id="invite_custom_code_input" name="invite_custom_code" placeholder="<?php echo $modalText('cfclient.invite_registration.custom_placeholder', $modalIsChinese ? '仅白名单用户可用：输入 6-20 位字母数字' : 'Whitelist only: 6-20 uppercase letters/digits'); ?>" maxlength="20" autocomplete="off" disabled>
+                            <input type="text" class="form-control text-uppercase" id="invite_custom_code_input" name="invite_custom_code" placeholder="<?php echo $modalText('cfclient.invite_registration.custom_placeholder', $modalIsChinese ? '白名单用户可选填自定义邀请码（6-20位字母数字）；留空则随机生成' : 'Whitelist users may optionally enter a custom code (6-20 alnum); leave blank for random generation'); ?>" maxlength="20" autocomplete="off">
                         </div>
                         <?php endif; ?>
                     </form>
@@ -1134,11 +1131,6 @@ $inviteRegCanAutoUnlock = !$inviteRegUnlocked && $inviteRegistrationInviteEnable
             input.setAttribute('readonly', 'readonly');
             input.setAttribute('disabled', 'disabled');
             if (customInput) { customInput.setAttribute('disabled', 'disabled'); customInput.removeAttribute('required'); }
-        } else if (mode === 'custom') {
-            input.value = 1;
-            input.setAttribute('readonly', 'readonly');
-            input.setAttribute('disabled', 'disabled');
-            if (customInput) { customInput.removeAttribute('disabled'); customInput.setAttribute('required', 'required'); }
         } else {
             input.removeAttribute('readonly');
             <?php if ($inviteRegGenerateDisabled): ?>
@@ -1146,14 +1138,14 @@ $inviteRegCanAutoUnlock = !$inviteRegUnlocked && $inviteRegistrationInviteEnable
             <?php else: ?>
             input.removeAttribute('disabled');
             <?php endif; ?>
-            if (customInput) { customInput.setAttribute('disabled', 'disabled'); customInput.removeAttribute('required'); customInput.value = ''; }
+            if (customInput) { customInput.removeAttribute('disabled'); customInput.removeAttribute('required'); }
         }
     }
 
     if (modeSelect) {
         var cachedMode = '';
         try { cachedMode = localStorage.getItem(storageKey) || ''; } catch (e) {}
-        if (cachedMode === 'fixed' || cachedMode === 'one_time' || cachedMode === 'custom') {
+        if (cachedMode === 'fixed' || cachedMode === 'one_time') {
             modeSelect.value = cachedMode;
         }
         applyInviteModeLock(modeSelect.value);

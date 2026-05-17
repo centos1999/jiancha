@@ -617,6 +617,7 @@ class CfClientActionService
             } else {
                 $count = max(1, (int) ($_POST['invite_generate_count'] ?? 1));
                 $inviteMode = strtolower(trim((string) ($_POST['invite_mode'] ?? 'one_time')));
+                $customCode = strtoupper(trim((string) ($_POST['invite_custom_code'] ?? '')));
                 try {
                     if ($inviteMode === 'fixed') {
                         if (CfInviteRegistrationService::isFixedInviteModeLocked((int) $userid)) {
@@ -627,7 +628,9 @@ class CfClientActionService
                             );
                             $msg_type = 'warning';
                         } else {
-                            $fixed = CfInviteRegistrationService::enableFixedInviteMode((int) $userid);
+                            $fixed = $customCode !== ''
+                                ? CfInviteRegistrationService::enableFixedInviteModeWithCustomCode((int) $userid, $customCode)
+                                : CfInviteRegistrationService::enableFixedInviteMode((int) $userid);
                             $msg = self::actionTextByLanguage(
                                 'invite_registration.fixed_mode_success',
                                 '已启用固定邀请码模式，固定邀请码：%s',
@@ -636,8 +639,7 @@ class CfClientActionService
                             );
                             $msg_type = 'success';
                         }
-                    } elseif ($inviteMode === 'custom') {
-                        $customCode = strtoupper(trim((string) ($_POST['invite_custom_code'] ?? '')));
+                    } elseif ($customCode !== '') {
                         $created = CfInviteRegistrationService::generateCustomInviteCode((int) $userid, $customCode);
                         $msg = self::actionTextByLanguage(
                             'invite_registration.custom_generate_success',
