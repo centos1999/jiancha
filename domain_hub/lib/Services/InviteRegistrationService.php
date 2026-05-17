@@ -1199,7 +1199,7 @@ class CfInviteRegistrationService
         foreach ($rows as $row) {
             $items[] = [
                 'id' => (int) ($row->id ?? 0),
-                'invite_code' => strtoupper((string) ($row->invite_code ?? '')),
+                'invite_code' => trim((string) ($row->invite_code ?? '')),
                 'created_at' => $row->created_at ?? null,
                 'mode' => 'one_time',
             ];
@@ -1231,7 +1231,7 @@ class CfInviteRegistrationService
                 'updated_at' => date('Y-m-d H:i:s'),
             ]);
         return [
-            'invite_code' => strtoupper((string) ($profile['invite_code'] ?? '')),
+            'invite_code' => trim((string) ($profile['invite_code'] ?? '')),
         ];
     }
 
@@ -1250,7 +1250,7 @@ class CfInviteRegistrationService
             return '';
         }
         $code = (string) Capsule::table(self::TABLE_UNLOCK)->where('userid', $userId)->value('invite_code');
-        return strtoupper(trim($code));
+        return trim($code);
     }
 
 
@@ -1263,7 +1263,7 @@ class CfInviteRegistrationService
             ->where('userid', $userId)
             ->first(['invite_code', 'created_at']);
         return [
-            'invite_code' => strtoupper(trim((string) ($row->invite_code ?? ''))),
+            'invite_code' => trim((string) ($row->invite_code ?? '')),
             'created_at' => $row->created_at ?? null,
         ];
     }
