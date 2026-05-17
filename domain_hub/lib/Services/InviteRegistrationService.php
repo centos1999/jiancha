@@ -1044,6 +1044,67 @@ class CfInviteRegistrationService
         return $created;
     }
 
+    public static function canUserUseCustomInviteCode(int $userId): bool
+    {
+        if ($userId <= 0) {
+            return false;
+        }
+        $raw = (string) self::resolveModuleSettingValue('invite_registration_custom_code_user_whitelist');
+        if (trim($raw) === '') {
+            return false;
+        }
+        $tokens = preg_split('/[\s,;|]+/', $raw) ?: [];
+        foreach ($tokens as $token) {
+            $id = (int) trim((string) $token);
+            if ($id > 0 && $id === $userId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static function generateCustomInviteCode(int $userId, string $customCode): array
+    {
+        self::ensureTables();
+        if ($userId <= 0) {
+            throw new \InvalidArgumentException('invalid_user');
+        }
+        if (!self::canUserUseCustomInviteCode($userId)) {
+            throw new \InvalidArgumentException('custom_not_allowed');
+        }
+        if (self::isFixedInviteModeLocked($userId)) {
+            throw new \InvalidArgumentException('fixed_mode_locked');
+        }
+        if (!self::inviterCanShare($userId) || !self::inviterMeetsMinimumMonths($userId)) {
+            throw new \InvalidArgumentException('inviter_not_eligible');
+        }
+
+        $code = strtoupper(trim($customCode));
+        if (!preg_match('/^[A-Z0-9]{6,20}$/', $code)) {
+            throw new \InvalidArgumentException('custom_invalid_format');
+        }
+
+        $remaining = self::getInviterRemainingQuota($userId);
+        if ($remaining !== PHP_INT_MAX && $remaining <= 0) {
+            throw new \InvalidArgumentException('count_exceeds_remaining');
+        }
+
+        $now = date('Y-m-d H:i:s');
+        try {
+            Capsule::table(self::TABLE_CODE_POOL)->insert([
+                'owner_userid' => $userId,
+                'invite_code' => $code,
+                'status' => 'unused',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        } catch (\Throwable $e) {
+            throw new \InvalidArgumentException('custom_code_exists');
+        }
+
+        return ['invite_code' => $code];
+    }
+
     public static function fetchUnusedCodes(int $userId, int $page, int $perPage = 5): array
     {
         self::ensureTables();

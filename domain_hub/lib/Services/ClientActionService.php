@@ -636,6 +636,16 @@ class CfClientActionService
                             );
                             $msg_type = 'success';
                         }
+                    } elseif ($inviteMode === 'custom') {
+                        $customCode = strtoupper(trim((string) ($_POST['invite_custom_code'] ?? '')));
+                        $created = CfInviteRegistrationService::generateCustomInviteCode((int) $userid, $customCode);
+                        $msg = self::actionTextByLanguage(
+                            'invite_registration.custom_generate_success',
+                            '自定义邀请码生成成功：%s',
+                            'Custom invite code generated: %s',
+                            [strtoupper((string) ($created['invite_code'] ?? ''))]
+                        );
+                        $msg_type = 'success';
                     } else {
                         $created = CfInviteRegistrationService::generateInviteCodes((int) $userid, $count);
                         if ($created > 0) {
@@ -677,6 +687,30 @@ class CfClientActionService
                             '单次最多可生成 %s 个邀请码，请调整后重试。',
                             'You can generate at most %s invite codes per request.',
                             [$batchMax]
+                        );
+                    } elseif ($e->getMessage() === 'custom_not_allowed') {
+                        $msg = self::actionTextByLanguage(
+                            'invite_registration.custom_not_allowed',
+                            '当前账号未开放自定义邀请码权限。',
+                            'Custom invite code is not allowed for your account.'
+                        );
+                    } elseif ($e->getMessage() === 'custom_invalid_format') {
+                        $msg = self::actionTextByLanguage(
+                            'invite_registration.custom_invalid_format',
+                            '自定义邀请码格式无效：仅支持 6-20 位大写字母与数字。',
+                            'Invalid custom code format: only 6-20 uppercase letters and digits are allowed.'
+                        );
+                    } elseif ($e->getMessage() === 'custom_code_exists') {
+                        $msg = self::actionTextByLanguage(
+                            'invite_registration.custom_code_exists',
+                            '该邀请码已存在，请更换后重试。',
+                            'This invite code already exists. Please try another one.'
+                        );
+                    } elseif ($e->getMessage() === 'inviter_not_eligible') {
+                        $msg = self::actionTextByLanguage(
+                            'invite_registration.custom_inviter_not_eligible',
+                            '当前账号暂不满足发码条件，请检查账户资格或剩余额度。',
+                            'Current account is not eligible to issue invite codes yet.'
                         );
                     } else {
                         $msg = self::actionTextByLanguage(
