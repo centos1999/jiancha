@@ -617,7 +617,7 @@ class CfClientActionService
             } else {
                 $count = max(1, (int) ($_POST['invite_generate_count'] ?? 1));
                 $inviteMode = strtolower(trim((string) ($_POST['invite_mode'] ?? 'one_time')));
-                $customCode = strtoupper(trim((string) ($_POST['invite_custom_code'] ?? '')));
+                $customCode = trim((string) ($_POST['invite_custom_code'] ?? ''));
                 try {
                     if ($inviteMode === 'fixed') {
                         if (CfInviteRegistrationService::isFixedInviteModeLocked((int) $userid)) {
@@ -635,7 +635,7 @@ class CfClientActionService
                                 'invite_registration.fixed_mode_success',
                                 '已启用固定邀请码模式，固定邀请码：%s',
                                 'Fixed invite code mode enabled. Code: %s',
-                                [strtoupper((string) ($fixed['invite_code'] ?? ''))]
+                            [(string) ($fixed['invite_code'] ?? '')]
                             );
                             $msg_type = 'success';
                         }
@@ -645,7 +645,7 @@ class CfClientActionService
                             'invite_registration.custom_generate_success',
                             '自定义邀请码生成成功：%s',
                             'Custom invite code generated: %s',
-                            [strtoupper((string) ($created['invite_code'] ?? ''))]
+                            [(string) ($created['invite_code'] ?? '')]
                         );
                         $msg_type = 'success';
                     } else {
@@ -699,8 +699,8 @@ class CfClientActionService
                     } elseif ($e->getMessage() === 'custom_invalid_format') {
                         $msg = self::actionTextByLanguage(
                             'invite_registration.custom_invalid_format',
-                            '自定义邀请码格式无效：仅支持 6-20 位大写字母与数字。',
-                            'Invalid custom code format: only 6-20 uppercase letters and digits are allowed.'
+                            '自定义邀请码格式无效：仅支持 6-20 位字母与数字。',
+                            'Invalid custom code format: only 6-20 letters and digits are allowed.'
                         );
                     } elseif ($e->getMessage() === 'custom_code_exists') {
                         $msg = self::actionTextByLanguage(

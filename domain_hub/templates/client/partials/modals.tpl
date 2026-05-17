@@ -913,7 +913,7 @@ $inviteRegCanAutoUnlock = !$inviteRegUnlocked && $inviteRegistrationInviteEnable
                         </div>
                         <?php if ($inviteRegCanCustomCode): ?>
                         <div class="col-12">
-                            <input type="text" class="form-control text-uppercase" id="invite_custom_code_input" name="invite_custom_code" placeholder="<?php echo $modalText('cfclient.invite_registration.custom_placeholder', $modalIsChinese ? '白名单用户可选填自定义邀请码（6-20位字母数字）；留空则随机生成' : 'Whitelist users may optionally enter a custom code (6-20 alnum); leave blank for random generation'); ?>" maxlength="20" autocomplete="off">
+                            <input type="text" class="form-control" id="invite_custom_code_input" name="invite_custom_code" placeholder="<?php echo $modalText('cfclient.invite_registration.custom_placeholder', $modalIsChinese ? '白名单用户可选填自定义邀请码（6-20位字母数字，支持小写）；留空则随机生成' : 'Whitelist users may optionally enter a custom code (6-20 letters/digits, lowercase allowed); leave blank for random generation'); ?>" maxlength="20" autocomplete="off">
                         </div>
                         <?php endif; ?>
                     </form>

@@ -1079,8 +1079,8 @@ class CfInviteRegistrationService
             throw new \InvalidArgumentException('inviter_not_eligible');
         }
 
-        $code = strtoupper(trim($customCode));
-        if (!preg_match('/^[A-Z0-9]{6,20}$/', $code)) {
+        $code = trim($customCode);
+        if (!preg_match('/^[A-Za-z0-9]{6,20}$/', $code)) {
             throw new \InvalidArgumentException('custom_invalid_format');
         }
 
@@ -1120,8 +1120,8 @@ class CfInviteRegistrationService
         if (!self::inviterCanShare($userId) || !self::inviterMeetsMinimumMonths($userId)) {
             throw new \InvalidArgumentException('inviter_not_eligible');
         }
-        $code = strtoupper(trim($customCode));
-        if (!preg_match('/^[A-Z0-9]{6,20}$/', $code)) {
+        $code = trim($customCode);
+        if (!preg_match('/^[A-Za-z0-9]{6,20}$/', $code)) {
             throw new \InvalidArgumentException('custom_invalid_format');
         }
         $remaining = self::getInviterRemainingQuota($userId);
@@ -1151,7 +1151,7 @@ class CfInviteRegistrationService
 
     private static function isInviteCodeOccupied(string $code, int $userId = 0): bool
     {
-        $cleanCode = strtoupper(trim($code));
+        $cleanCode = trim($code);
         if ($cleanCode === '') {
             return true;
         }
