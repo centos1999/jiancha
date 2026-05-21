@@ -454,6 +454,82 @@ function api_remote_record_exists_for_local($providerClient, string $zoneId, $lo
     return false;
 }
 
+
+function api_self_heal_dns_create_conflict($providerClient, $subdomainRow, array $target): bool {
+    if (!$providerClient || !method_exists($providerClient, 'getDnsRecords') || !$subdomainRow) {
+        return false;
+    }
+
+    $zoneId = trim((string) ($subdomainRow->cloudflare_zone_id ?? $subdomainRow->rootdomain ?? ''));
+    if ($zoneId === '') {
+        return false;
+    }
+
+    $targetName = api_normalize_dns_name_for_compare((string) ($target['name'] ?? ''));
+    $targetType = strtoupper(trim((string) ($target['type'] ?? '')));
+    $targetContent = api_normalize_dns_content((string) ($target['content'] ?? ''), $targetType);
+    if ($targetName === '' || $targetType === '' || $targetContent === '') {
+        return false;
+    }
+
+    try {
+        $recordsRes = $providerClient->getDnsRecords($zoneId, (string) ($target['name'] ?? ''), ['type' => $targetType, 'per_page' => 1000]);
+        if (!($recordsRes['success'] ?? false)) {
+            return false;
+        }
+
+        $records = is_array($recordsRes['result'] ?? null) ? ($recordsRes['result'] ?? []) : [];
+        $matched = null;
+        foreach ($records as $remoteRecord) {
+            if (!is_array($remoteRecord)) {
+                continue;
+            }
+            $remoteName = api_normalize_dns_name_for_compare((string) ($remoteRecord['name'] ?? ''));
+            $remoteType = strtoupper(trim((string) ($remoteRecord['type'] ?? '')));
+            $remoteContent = api_normalize_dns_content((string) ($remoteRecord['content'] ?? ''), $remoteType);
+            if ($remoteName === $targetName && $remoteType === $targetType && $remoteContent === $targetContent) {
+                $matched = $remoteRecord;
+                break;
+            }
+        }
+
+        if (!$matched) {
+            return false;
+        }
+
+        $exists = Capsule::table('mod_cloudflare_dns_records')
+            ->where('subdomain_id', intval($subdomainRow->id ?? 0))
+            ->whereRaw('LOWER(name) = ?', [strtolower((string) ($matched['name'] ?? $target['name'] ?? ''))])
+            ->whereRaw('UPPER(type) = ?', [$targetType])
+            ->whereRaw('LOWER(content) = ?', [strtolower((string) ($matched['content'] ?? $target['content'] ?? ''))])
+            ->exists();
+        if ($exists) {
+            return true;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        Capsule::table('mod_cloudflare_dns_records')->insert([
+            'subdomain_id' => intval($subdomainRow->id ?? 0),
+            'zone_id' => $zoneId,
+            'record_id' => isset($matched['id']) ? (string) $matched['id'] : (isset($matched['record_id']) ? (string) $matched['record_id'] : null),
+            'name' => strtolower((string) ($matched['name'] ?? ($target['name'] ?? ''))),
+            'type' => $targetType,
+            'content' => (string) ($matched['content'] ?? ($target['content'] ?? '')),
+            'ttl' => intval($matched['ttl'] ?? ($target['ttl'] ?? 600)),
+            'proxied' => 0,
+            'status' => 'active',
+            'priority' => $targetType === 'MX' ? intval($target['priority'] ?? 10) : null,
+            'line' => trim((string) ($target['line'] ?? '')) !== '' ? trim((string) ($target['line'] ?? '')) : null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        CfSubdomainService::markHasDnsHistory(intval($subdomainRow->id ?? 0));
+        return true;
+    } catch (\Throwable $e) {
+        return false;
+    }
+}
+
 function api_handle_subdomain_register(array $data, $keyRow, array $settings): array {
     $code = 200;
     $result = null;
@@ -2860,8 +2936,29 @@ function handleApiRequest(){
                                         $code = 403;
                                         $result = ['error' => 'record limit reached'];
                                     } catch (\RuntimeException $e) {
-                                        $code = 400;
-                                        $result = ['error' => cfmod_format_provider_error($e->getMessage())];
+                                        $normalizedProviderError = function_exists('cfmod_normalize_provider_error')
+                                            ? cfmod_normalize_provider_error($e->getMessage())
+                                            : ['error_class' => 'provider_unavailable', 'admin_detail' => $e->getMessage(), 'user_message' => cfmod_format_provider_error($e->getMessage())];
+
+                                        $healed = false;
+                                        if ((string) ($normalizedProviderError['error_class'] ?? '') === 'provider_conflict') {
+                                            $healed = api_self_heal_dns_create_conflict($cf, $s, [
+                                                'name' => $name,
+                                                'type' => $type,
+                                                'content' => $content,
+                                                'ttl' => $ttl,
+                                                'line' => $line,
+                                                'priority' => $type === 'MX' ? $priority : null,
+                                            ]);
+                                        }
+
+                                        if ($healed) {
+                                            CfSubdomainService::syncDnsHistoryFlag($s->id);
+                                            $result = ['success' => true, 'message' => 'DNS record already existed remotely and has been repaired locally'];
+                                        } else {
+                                            $code = 400;
+                                            $result = ['error' => (string) ($normalizedProviderError['user_message'] ?? cfmod_format_provider_error($e->getMessage()))];
+                                        }
                                     } catch (\Throwable $e) {
                                         $code = 500;
                                         $result = ['error' => 'create failed'];
