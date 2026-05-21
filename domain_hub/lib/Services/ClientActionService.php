@@ -2811,12 +2811,45 @@ if($_POST['action'] == "create_dns" && isset($_POST['subdomain_id'])) {
                                     $normalizedProviderError = function_exists('cfmod_normalize_provider_error')
                                         ? cfmod_normalize_provider_error($e->getMessage())
                                         : ['error_class' => 'provider_unavailable', 'admin_detail' => $e->getMessage(), 'user_message' => cfmod_format_provider_error($e->getMessage())];
+                                    $errorClass = (string) ($normalizedProviderError['error_class'] ?? 'provider_unavailable');
+
+                                    $healed = false;
+                                    if ($errorClass === 'provider_conflict') {
+                                        $healed = self::selfHealDnsCreateConflict($cf, $record, $subdomain_id, [
+                                            'name' => $final_name,
+                                            'type' => $record_type_upper,
+                                            'content' => $record_content,
+                                            'ttl' => $record_ttl,
+                                            'line' => $line,
+                                            'priority' => in_array($record_type_upper, ['MX', 'SRV'], true) ? $record_priority : null,
+                                        ]);
+                                    }
+
+                                    if ($healed) {
+                                        CfSubdomainService::syncDnsHistoryFlag($subdomain_id);
+                                        $msg = self::actionText('dns.create.healed', '记录已存在于云端，已自动补偿并同步到本地。');
+                                        $msg_type = 'success';
+                                        if (function_exists('cloudflare_subdomain_log')) {
+                                            cloudflare_subdomain_log('client_create_dns_conflict_healed', [
+                                                'error_class' => $errorClass,
+                                                'admin_detail' => (string) ($normalizedProviderError['admin_detail'] ?? $e->getMessage()),
+                                                'name' => $final_name,
+                                                'type' => $record_type_upper,
+                                                'content' => $record_content,
+                                                'ttl' => $record_ttl,
+                                                'line' => $line,
+                                                'self_healed' => true,
+                                            ], $userid, $subdomain_id);
+                                        }
+                                        throw new Exception('__handled_healed__');
+                                    }
+
                                     $errorText = (string) ($normalizedProviderError['user_message'] ?? cfmod_format_provider_error($e->getMessage()));
                                     $msg = self::actionText('dns.create.failed', 'DNS记录创建失败：%s', [$errorText]);
                                     $msg_type = "danger";
                                     if (function_exists('cloudflare_subdomain_log')) {
                                         cloudflare_subdomain_log('client_create_dns_error', [
-                                            'error_class' => (string) ($normalizedProviderError['error_class'] ?? 'provider_unavailable'),
+                                            'error_class' => $errorClass,
                                             'admin_detail' => (string) ($normalizedProviderError['admin_detail'] ?? $e->getMessage()),
                                         ], $userid, $subdomain_id);
                                     }
@@ -2867,7 +2900,7 @@ if($_POST['action'] == "create_dns" && isset($_POST['subdomain_id'])) {
                         }
                     }
                 } catch (Exception $e) {
-                    if (!in_array($e->getMessage(), ['__handled_limit__', '__handled_error__'], true)) {
+                    if (!in_array($e->getMessage(), ['__handled_limit__', '__handled_error__', '__handled_healed__'], true)) {
                         $normalizedProviderError = function_exists('cfmod_normalize_provider_error')
                             ? cfmod_normalize_provider_error($e->getMessage())
                             : ['error_class' => 'provider_unavailable', 'admin_detail' => $e->getMessage(), 'user_message' => cfmod_format_provider_error($e->getMessage())];
@@ -4767,6 +4800,83 @@ if($_POST['action'] == 'replace_ns_group' && isset($_POST['subdomain_id'])) {
             }
         }
         return false;
+    }
+
+
+    private static function selfHealDnsCreateConflict($providerClient, $subdomainRow, int $subdomainId, array $target): bool
+    {
+        if ($subdomainId <= 0 || !$providerClient || !method_exists($providerClient, 'getDnsRecords') || !$subdomainRow) {
+            return false;
+        }
+
+        $zoneId = (string) ($subdomainRow->cloudflare_zone_id ?? '');
+        if ($zoneId === '') {
+            $zoneId = (string) ($subdomainRow->rootdomain ?? '');
+        }
+        if ($zoneId === '') {
+            return false;
+        }
+
+        $targetName = self::normalizeDnsNameForCompare((string) ($target['name'] ?? ''));
+        $targetType = strtoupper(trim((string) ($target['type'] ?? '')));
+        $targetContent = self::normalizeDnsContent((string) ($target['content'] ?? ''), $targetType);
+        if ($targetName === '' || $targetType === '' || $targetContent === '') {
+            return false;
+        }
+
+        try {
+            $recordsRes = $providerClient->getDnsRecords($zoneId, (string) ($target['name'] ?? ''), ['type' => $targetType, 'per_page' => 1000]);
+            if (!($recordsRes['success'] ?? false)) {
+                return false;
+            }
+            $records = is_array($recordsRes['result'] ?? null) ? ($recordsRes['result'] ?? []) : [];
+            $matched = null;
+            foreach ($records as $remoteRecord) {
+                if (!is_array($remoteRecord)) {
+                    continue;
+                }
+                $remoteName = self::normalizeDnsNameForCompare((string) ($remoteRecord['name'] ?? ''));
+                $remoteType = strtoupper(trim((string) ($remoteRecord['type'] ?? '')));
+                $remoteContent = self::normalizeDnsContent((string) ($remoteRecord['content'] ?? ''), $remoteType);
+                if ($remoteName === $targetName && $remoteType === $targetType && $remoteContent === $targetContent) {
+                    $matched = $remoteRecord;
+                    break;
+                }
+            }
+            if (!$matched) {
+                return false;
+            }
+
+            $exists = self::findLocalRecordByRemote($subdomainId, $matched);
+            if ($exists) {
+                return true;
+            }
+
+            $now = date('Y-m-d H:i:s');
+            Capsule::table('mod_cloudflare_dns_records')->insert([
+                'subdomain_id' => $subdomainId,
+                'zone_id' => $zoneId,
+                'record_id' => isset($matched['id']) ? (string) $matched['id'] : (isset($matched['record_id']) ? (string) $matched['record_id'] : null),
+                'name' => (string) ($matched['name'] ?? (string) ($target['name'] ?? '')),
+                'type' => $targetType,
+                'content' => (string) ($matched['content'] ?? (string) ($target['content'] ?? '')),
+                'ttl' => intval($matched['ttl'] ?? ($target['ttl'] ?? 600)),
+                'proxied' => 0,
+                'line' => isset($target['line']) && trim((string)$target['line']) !== '' ? trim((string)$target['line']) : null,
+                'priority' => $target['priority'] ?? null,
+                'status' => 'active',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            CfSubdomainService::markHasDnsHistory($subdomainId);
+            Capsule::table('mod_cloudflare_subdomain')
+                ->where('id', $subdomainId)
+                ->update(['notes' => '已解析', 'updated_at' => $now]);
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     private static function findLocalRecordByRemote(int $subdomainId, array $remoteRecord)
